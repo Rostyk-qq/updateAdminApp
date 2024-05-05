@@ -1,0 +1,29 @@
+.none{
+    display: none;
+}
+.text-custom{
+    font-size: 15px;
+}
+.text_table{
+    font-size: 12px;
+}
+.text-title{
+    font-size: 24px;
+}
+.button_text{
+    font-size: 17px;
+}
+@media screen and (max-width: 789px) {
+    .text-custom{
+        font-size: 13px;
+    }
+    .text-title{
+        font-size: 15px;
+    }
+    .button_text{
+        font-size: 14px;
+    }
+    .text_table{
+        font-size: 10px;
+    }
+}

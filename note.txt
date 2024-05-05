@@ -1,0 +1,673 @@
+validate email
+filter_var($request['register_email'], FILTER_VALIDATE_EMAIL)
+
+
+вивід користувача
+SELECT CURRENT_USER();
+
+
+перегляд привілегій
+SHOW GRANTS FOR "bookstore_administrator"@"localhost";
+
+
+створення користувача, grant revoke (вони не підтриують prepare)
+
+    public function createUser($username, $password){
+        $createUser = $this->connection->query("CREATE USER '{$username}'@'{$this->server}' IDENTIFIED BY '{$password}';");
+
+        if($createUser !== TRUE) {
+            http_response_code(500);
+            die('Error while creating user!');
+        } else {
+            return true;
+        }
+    }
+
+    public function grant($username)
+    {
+        $allow = $this->connection->query("GRANT SELECT, INSERT, DELETE, UPDATE ON osbb.* TO '{$username}'@'{$this->server}';");
+
+        if($allow !== TRUE) {
+            http_response_code(500);
+            die("Error while allow access for $username!");
+        }
+
+        $flush = $this->connection->query("FLUSH PRIVILEGES;");
+        if($flush !== TRUE) {
+            http_response_code(500);
+            die("Error while flushing privileges!");
+        }
+        else{
+            return true;
+        }
+    }
+    public function revoke($username){
+        $revoke = $this->connection->query("REVOKE SELECT, INSERT, DELETE, UPDATE ON osbb.* TO '{$username}'@'{$this->server}'");
+
+        if($revoke !== TRUE) {
+            http_response_code(500);
+            die("Error while allow access for $username!");
+        }
+        else{
+            return true;
+        }
+    }
+
+
+
+    openssl - шифрування
+    $iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length('aes-128-cbc'));
+    $key = openssl_random_pseudo_bytes(16); 16 для 128, 32 для 256(aes-128-cbc)
+
+    OPENSSL_RAW_DATA - вказує шо обробляюит
+
+    setcookie('username', $username, time()+60*60*7, '/');
+    setcookie('password', openssl_encrypt(base64_encode($password), 'aes-128-cbc', $key, OPENSSL_RAW_DATA, $iv)
+
+
+
+
+
+    записування значення про відвідування в файл
+
+    $counterFile = '../../counter.dat';
+
+    if (!file_exists($counterFile)) {
+        touch($counterFile);
+    }
+
+    $res_array = [];
+
+    $currentCounter = file_get_contents($counterFile);
+    $data_users = preg_split("/\n\s*/", $currentCounter);
+
+    foreach ($data_users as $users) {
+        if (!empty($users)) {
+            list($user_name, $count) = explode(": ", $users, 2);
+
+            if ($user_name === $username) {
+                $count = (int)$count + 1;
+
+                $found = false;
+                foreach ($res_array as &$res) {
+                    if ($res['username'] === $user_name) {
+                        $res['count'] = $count;
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) {
+                    $res_array[] = ['username' => $user_name, 'count' => $count];
+                }
+            }
+            else {
+                $res_array[] = ['username' => $user_name, 'count' => $count];
+            }
+        }
+    }
+
+    $checkAll = false;
+    foreach ($res_array as $r) {
+        if ($r['username'] === $username) {
+            $checkAll=true;
+        }
+    }
+    if (!$checkAll) {
+        $res_array[] = ['username' => $username, 'count' => 1];
+        file_put_contents($counterFile, $username . ': ' . 1 . "\n", FILE_APPEND);
+    }
+    else{
+        file_put_contents($counterFile, '');
+        foreach ($res_array as $user) {
+            file_put_contents($counterFile, $user['username'] . ': ' . $user['count'] . "\n", FILE_APPEND);
+        }
+    }
+
+
+
+    використання window function for id
+    SELECT ROW_NUMBER() over () as id,
+
+
+    GRANT OPTION - Коли користувач має привілегію GRANT OPTION на певні дії з об'єктами бази даних, він може надавати цю саму привілегію іншим користувачам
+
+
+
+    script view crud
+
+    задання значення в базу даних через select inner join
+
+        public function getData(){
+            $createTable = $this->connection->prepare('CREATE TABLE IF NOT EXISTS entry_object_table (
+                id INT(11) UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                entry_number INT(11) UNSIGNED NOT NULL,
+                work_staff INT(11) UNSIGNED NOT NULL,
+                flat_number INT(11) UNSIGNED NOT NULL,
+                owner_firstname VARCHAR(255) NOT NULL,
+                owner_secondname VARCHAR(255) NOT NULL,
+                services_price DECIMAL(10, 2) UNSIGNED NOT NULL
+            );');
+            if($createTable->execute() !== TRUE){
+                http_response_code(500);
+                die("Error while create table!");
+            }
+
+            $check = $this->connection->prepare('SELECT COUNT(*) as count_col FROM entry_object_table');
+            $count = 0;
+            if($check->execute() === TRUE){
+                $result = $check->get_result();
+                if($result->num_rows > 0){
+                    while ($row = $result->fetch_assoc()){
+                        $count = (int)$row['count_col'];
+                    }
+                }
+            }
+
+            if ($count === 0) {
+                $insert = $this->connection->prepare('
+                    INSERT INTO entry_object_table (entry_number, work_staff, flat_number, owner_firstname, owner_secondname, services_price)
+                    SELECT
+                        building_entrance.entrance_number AS entry_number,
+                        entrance_details.site_staff + entrance_details.office_staff AS work_staff,
+                        flat.flat_number AS flat_number,
+                        flat.f_name_owner AS owner_firstname,
+                        flat.s_name_ownwer AS owner_secondname,
+                        flat.services_price AS services_price
+                    FROM building_entrance
+                    INNER JOIN entrance_details ON entrance_details.entrance_number = building_entrance.entrance_number
+                    INNER JOIN flat ON flat.entrance_number = entrance_details.entrance_number;
+                ');
+
+                if ($insert->execute() !== TRUE) {
+                    http_response_code(500);
+                    die("Error while insert into table!");
+                }
+                else{
+                    $insert->close();
+                }
+            }
+
+            $array_data = [];
+
+            $select_data = $this->connection->prepare("SELECT * FROM entry_object_table");
+
+            if($select_data->execute() !== TRUE){
+                http_response_code(500);
+                die("Error while getting data !");
+            }
+
+            $result = $select_data->get_result();
+            if($result->num_rows > 0){
+                while($row = $result->fetch_assoc()){
+                    $array_data[] = $row;
+                }
+            }
+
+            $createTable->close();
+            $select_data->close();
+
+            return $array_data;
+        }
+
+        public function checkEntry($entry){
+            $checkEntry = $this->connection->prepare('SELECT * FROM building_entrance where entrance_number = ?');
+            $entry = (int)$entry;
+            $checkEntry->bind_param('i', $entry);
+
+            if($checkEntry->execute() !== TRUE){
+                http_response_code(500);
+                die("Error while check entry !");
+            }
+            else{
+                $result = $checkEntry->get_result();
+                $checkEntry->close();
+                if($result->num_rows > 0){
+                    return false;
+                }
+                else{
+                    return true;
+                }
+            }
+        }
+
+
+
+        додавання значення в formData
+        const formData = new FormData(addUpdateModalParams.form);
+        formData.append('action', addUpdateModalParams.action);
+
+
+        відслідковування на клік поза дочірній елемент
+
+            document.body.onclick = (e) => {
+                if(!e.target.closest('#add_update_modal')){
+                    modalUpdateAddErrors();
+                    addUpdateModalParams.form.reset();
+                }
+            }
+
+
+        фільтрація по частині значення тобто не по всьому
+                $keyword = '%' . $value . '%'; ці знаки і використання LIKE
+
+                $search_array = [];
+
+                $search = $this->connection->prepare("SELECT id FROM entry_object_table WHERE CONCAT(owner_firstname, ' ', owner_secondname) LIKE ?");
+                $search->bind_param('s', $keyword);
+
+                if($search->execute() !== TRUE){
+                    http_response_code(500);
+                    die("Error while search!");
+                }
+                else{
+                    $result = $search->get_result();
+                    if($result->num_rows > 0){
+                        while($row = $result->fetch_assoc()){
+                            $search_array[] = $row;
+                        }
+                    }
+                    $search->close();
+
+                    return $search_array;
+                }
+
+        корисний спосіб для перевірки
+            if (searchedIds.some(obj => parseInt(obj.id) === entryId)) {
+                row.classList.remove('none');
+            } else {
+                row.classList.add('none');
+            }
+
+            /\D/ - all non digits \d - digits \d{set interval якшо не вказувати то всі}
+            $clear_number = preg_replace("/\D/", '', $request['phone_number_owner']);
+            if(!preg_match('/^\d{10,11}$/', $clear_number)){
+                $errors[] = ['code' => 10, 'message' => 'Phone number is not active!'];
+            }
+
+
+
+            виконання вставки 1 раз
+
+                session_start();
+                if (!isset($_SESSION['added']) || !$_SESSION['added']) {
+                    $insert_data = $this->connection->prepare('
+                        INSERT INTO owners_flats (`entrance_number`, `flat_number`, `owner_firstname`,
+                              `owner_secondname`, `phone_number_owner`, `services_price`, `tenants`)
+                        SELECT
+                            flat.entrance_number AS entrance_number,
+                            flat.flat_number AS flat_number,
+                            flat.f_name_owner AS owner_firstname,
+                            flat.s_name_owner AS owner_secondname,
+                            flat.phone_number_owner AS phone_number_owner,
+                            flat.services_price AS services_price,
+                            flat.tenants AS tenants
+                        FROM entrance_details
+                        INNER JOIN flat ON flat.entrance_number = entrance_details.entrance_number;
+                    ');
+
+                    if ($insert_data->execute()) {
+                        $_SESSION['added'] = true;
+                    } else {
+                        http_response_code(500);
+                        die("Error while inserting data into owners_flats!");
+                    }
+                }
+                session_write_close();
+
+
+
+
+    очищення форми якшо клік поза
+        addUpdateModal._element.onclick = (e) => {
+            if(!e.target.closest('#add_update_form')){
+                modalUpdateAddErrors();
+                addUpdateModalParams.form.reset();
+            }
+        }
+
+
+
+    перевірка на унікальність 2 значеннь і перевіока на phone_number
+    тут унікальність в тому шо ми перевіряємо для update і для add
+    тут ми перевіряємо на update i add так само і для entrance_number i flat_number
+
+        public function checkPhoneNumber($request){
+            $id = (int)$request['update_id'];
+            $phone = $request['phone_number_owner'];
+
+            $checkPhoneNumber = $this->connection->prepare('SELECT * FROM owners_flats where phone_number_owner = ?');
+            $checkPhoneNumber->bind_param('s', $phone);
+
+            if($checkPhoneNumber->execute() !== TRUE){
+                http_response_code(500);
+                die('Error while check phone number!');
+            }
+            else{
+                $result = $checkPhoneNumber->get_result();
+                $row = $result->fetch_assoc();
+                $checkPhoneNumber->close();
+
+                ($result->num_rows === 1 && (int)$row['id'] === $id) тобто якшо ми update і не змінюємо
+                сам phone_number
+                ($result->num_rows === 0 && $id === 0) -> дадаємо
+                ($result->num_rows === 0 && $id !== 0) - update на нові значення
+                if(($result->num_rows === 1 && (int)$row['id'] === $id) ||
+                    ($result->num_rows === 0 && $id === 0) ||
+                    ($result->num_rows === 0 && $id !== 0)
+                ){
+                    return true;
+                }
+                else{
+                    return false;
+                }
+            }
+        }
+
+
+
+
+        провірка пароля в таблиці mysql.user
+
+        public function checkPassword($username, $password)
+        {
+            $check = $this->connection->prepare('SELECT * FROM mysql.user WHERE User = ? AND Password=PASSWORD(?)');
+            $check->bind_param('ss', $username, $password);
+
+            if ($check->execute() !== TRUE) {
+                http_response_code(500);
+                die("Error while selecting user!");
+            } else {
+                $result = $check->get_result();
+                $check->close();
+
+                if ($result->num_rows > 0) {
+                    return 'True';
+                }
+                else{
+                    return 'False';
+                }
+            }
+        }
+
+
+        для перевірки на permission ми викорисотвуємо такий синтаксис
+                try{
+
+                }
+                catch (mysqli_sql_exception $e) {
+                    return $e->getMessage();
+                }
+
+
+        bootstrap alert
+        <div id="alert_permission" class="alert alert-warning d-flex justify-content-between  d-none" role="alert">
+              <strong>Warning, <?php echo $_GET['username']; ?>!</strong>
+              <span id="permission_message"></span>
+        </div>
+        alert.permission_alert.classList.remove('d-none');
+        setTimeout(() => {
+             alert.permission_alert.classList.add('d-none');
+        }, 3000);
+
+
+
+
+        // синтаксис для роботи з admin phpmyadmin тобто
+        ми задаємо значення в construct це username password або null
+        тобто якшо ми в entry то ми задаємо username, password і валідуємо
+        по таблиці mysql.user
+
+        public function __construct($username, $password)
+            {
+
+                session_start();
+
+                session_regenerate_id();
+
+                if($username !== null && $password !== null) {
+
+                    $_SESSION['username'] = $username;
+                    $_SESSION['password'] = $password;
+
+                    $this->username = $_SESSION['username'];
+
+                    if ($_SESSION['username'] === 'root' && $_SESSION['password'] === '') {
+                        $this->connection = new mysqli($this->server, $_SESSION['username'], $_SESSION['password'], $this->db_name);
+                        $this->insertDefaultData($this->connection);
+                        $this->useDataBase();
+                    } else {
+                        $con = new mysqli($this->server, 'root', '', $this->db_name);
+
+                        $this->insertDefaultData($con);
+
+                        if ($con->connect_error) {
+                            http_response_code(500);
+                            die("Error connecting to database");
+                        }
+
+                        $user = $_SESSION['username'];
+                        $pass = $_SESSION['password'];
+
+                        $createUserQuery = $con->prepare("CREATE USER IF NOT EXISTS '$user'@'localhost' IDENTIFIED BY '$pass'");
+                        $createUserQuery->execute();
+
+                        if ($createUserQuery->errno) {
+                            http_response_code(500);
+                            die("Error creating user: " . $createUserQuery->error);
+                        }
+                        $createUserQuery->close();
+
+                        $flush = $con->query("FLUSH PRIVILEGES;");
+                        if ($flush !== TRUE) {
+                            http_response_code(500);
+                            die("Error while flushing privileges!");
+                        }
+
+                        $grantSelectQuery = $con->prepare("GRANT SELECT ON *.* TO '$user'@'localhost'");
+                        $grantSelectQuery->execute();
+
+                        if ($grantSelectQuery->errno) {
+                            http_response_code(500);
+                            die("Error granting SELECT privilege: " . $grantSelectQuery->error);
+                        }
+                        $grantSelectQuery->close();
+
+                        $flush = $con->query("FLUSH PRIVILEGES;");
+                        if ($flush !== TRUE) {
+                            http_response_code(500);
+                            die("Error while flushing privileges!");
+                        }
+                        $con->close();
+
+                        $this->connection = new mysqli($this->server, $_SESSION['username'], $_SESSION['password'], $this->db_name);
+                        $this->useDataBase();
+                    }
+                }
+                else{
+                    $username = isset($_SESSION['username']) ? $_SESSION['username'] : 'root';
+                    $password = isset($_SESSION['password']) ? $_SESSION['password'] : '';
+
+                    $this->connection = new mysqli($this->server, $username, $password, $this->db_name);
+
+                    $this->useDataBase();
+
+                    if($_SESSION['username']){
+                        $this->username = $_SESSION['username'];
+                    }
+                }
+
+                session_write_close();
+            }
+
+
+            validate для username password
+            тобто якшо є User то перевіряємо його на правильність
+
+            public function checkPassword($password, $username)
+                {
+                    $checkPassword = $this->connection->prepare('SELECT * FROM mysql.user WHERE User=?');
+                    $checkPassword->bind_param('s', $username);
+
+                    if ($checkPassword->execute() !== TRUE) {
+
+                        http_response_code(500);
+                        die("Error while selecting user!");
+
+                    } else {
+                        $result = $checkPassword->get_result();
+                        $checkPassword->close();
+
+                        if($result->num_rows === 0){
+                            return true;
+                        }
+
+                        if ($result->num_rows > 0) {
+                            $checkPasswordUser = $this->connection->prepare('SELECT * FROM mysql.user WHERE User=? and Password=PASSWORD(?)');
+
+                            $checkPasswordUser->bind_param('ss', $username, $password);
+
+                            if ($checkPasswordUser->execute() !== TRUE) {
+                                http_response_code(500);
+                                die("Error while selecting user!");
+                            }
+                            else{
+                                $result = $checkPasswordUser->get_result();
+
+                                if($result->num_rows > 0){
+                                    return true;
+                                }
+                                else{
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+
+
+
+        // alerts
+            js
+            alert.permission_alert.style.setProperty('transform', 'translateY(0%)');
+            setTimeout(() => {
+                alert.permission_alert.style.setProperty('transform', 'translateY(150%)');
+            }, 3000);
+
+            html
+            <div style="position: relative; z-index: 1;"> перед цим головний блок з position:relative
+                <div id="alert_permission" class="position-fixed p-1 bottom-0 left-0 mb-3 d-flex" style="transform: translateY(150%); transition: transform 1s ease;">
+                    <span class="card d-flex align-items-center justify-content-center py-3 px-3 border-end-0 rounded-end-0 bg-warning">
+                        <i class="fa-solid fa-circle-exclamation"></i>
+                    </span>
+                    <span class="card align-items-center justify-content-center py-3 px-3 rounded-start-0" id="permission_message">
+                    </span>
+                </div>
+            </div>
+
+
+        // викорстання Empty Table! Not Found! для Table
+                 <tbody id="body_table">
+
+                    <?php
+                        $data = $sql_data->getData();
+                        if(!empty($data)):
+                            foreach ($data as $dataRow):
+                    ?>
+                        ...
+                    <?php
+                            endforeach;
+                        else:
+                    ?>
+                    <tr>
+                        <td colspan="8" class="text-center fs-3" >Table is Empty!</td>
+                    </tr>
+                    <?php
+                        endif;
+                    ?>
+                </tbody>
+
+
+        перевірка на permission
+
+            function checkPermission($action){
+
+                $permission = null;
+
+                if($action === 'add_permission'){
+                    $permission = $this->connection->prepare('SELECT Insert_priv as act from mysql.user where User = ?');
+                }
+                if($action === 'update_permission'){
+                    $permission = $this->connection->prepare('SELECT Update_priv as act from mysql.user where User = ?');
+                }
+                if($action === 'delete_permission'){
+                    $permission = $this->connection->prepare('SELECT Delete_priv as act from mysql.user where User = ?');
+                }
+
+                $current_username = $this->username;
+                $permission->bind_param('s', $current_username);
+
+                if($permission->execute() !== TRUE){
+                    http_response_code(500);
+                    die('Error while check permission!');
+                }
+                else{
+                    $result = $permission->get_result();
+
+                    if($result->num_rows > 0) {
+                        while($row = $result->fetch_assoc()){
+                            if($row['act'] === 'Y'){
+                                return true;
+                            }
+                            else{
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+
+        також перевірка після кліку
+        add, update, delete
+                const permission = await checkPermission({permission: 'check', action: 'add_permission'});
+
+                if(permission){
+                    document.getElementById('update_id').value = '0';
+
+                    addUpdateModalParams.opened = true;
+
+                    addUpdateModalParams.modalTitle.textContent = 'Add';
+                    addUpdateModalParams.submitForm.textContent = 'Add';
+
+                    addUpdateModalParams.action = 'add';
+
+                    addUpdateModal.show();
+                }
+                else{
+                    alert.permission_message.textContent = "You don't have permission to add!";
+                    alert.permission_alert.style.setProperty('transform', 'translateY(0%)');
+                    setTimeout(() => {
+                        alert.permission_alert.style.setProperty('transform', 'translateY(150%)');
+                    }, 3000);
+                }
+
+
+        перероблення html в {} checkbox
+
+            const array = Array.from(list_users.querySelectorAll('tr'));
+
+            const resArray = {};
+
+            save_btn.onclick = async (e) => {
+                let i = 0;
+                for (const resArr of array) {
+                    let key = resArr.getAttribute('data-user');
+
+                    resArray[i] = {};
+                    resArray[i].user = key;
+                    resArray[i].select = resArr.querySelector('.select_switch input').checked ? 'Y' : 'N';
+                    resArray[i].insert = resArr.querySelector('.insert_switch input').checked ? 'Y' : 'N';
+                    resArray[i].update = resArr.querySelector('.update_switch input').checked ? 'Y' : 'N';
+                    resArray[i].delete = resArr.querySelector('.delete_switch input').checked ? 'Y' : 'N';
+                    i++;
+                }
+
